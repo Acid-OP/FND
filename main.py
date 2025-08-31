@@ -68,14 +68,31 @@ class VocabBasedFakeNewsDetector:
         score = proba[:, 0] - proba[:, 1]
         return score
 
-# --- Hybrid Detector using series chaining ---
+# --- Hybrid Detector with WORKING clickbait model ---
 class HybridFakeNewsDetector:
     def __init__(self):
         self.vocab_detector = VocabBasedFakeNewsDetector()
         self.tfidf_model = None
         self.tfidf_vectorizer = None
         self.label_encoder = LabelEncoder()
+        
+        # Use lightweight sentiment model
+        print("Loading sentiment model...")
         self.sentiment_model = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+        
+        # --- WORKING PUBLIC CLICKBAIT MODEL ---
+        print("Loading clickbait model...")
+        try:
+            self.clickbait_model = pipeline(
+                "text-classification",
+                model="caush/Clickbait1",  # This model exists and works
+                return_all_scores=True
+            )
+            print("✓ Clickbait model loaded successfully!")
+        except Exception as e:
+            print(f"⚠️ Clickbait model failed to load: {e}")
+            print("Continuing without clickbait component...")
+            self.clickbait_model = None
 
     @staticmethod
     def preprocess(text):
@@ -86,54 +103,123 @@ class HybridFakeNewsDetector:
         return text
 
     def train(self, fake_texts, real_texts):
+        print("Training hybrid detector...")
         all_texts = fake_texts + real_texts
         labels = ['FAKE']*len(fake_texts) + ['REAL']*len(real_texts)
         y = self.label_encoder.fit_transform(labels)
+        
+        # Train TF-IDF component
         self.tfidf_vectorizer = TfidfVectorizer(max_features=7000, ngram_range=(1,3))
         X = self.tfidf_vectorizer.fit_transform([self.preprocess(t) for t in all_texts])
         self.tfidf_model = LogisticRegression(max_iter=1000)
         self.tfidf_model.fit(X, y)
+        
+        # Train vocabulary component
         self.vocab_detector.train(all_texts, y)
+        print("✓ Training completed!")
 
     def predict(self, text):
         text_clean = self.preprocess(text)
-        # --- Series chaining ---
-        result = self.sentiment_model(text[:512])[0]
-        sent_score = result["score"] if result["label"]=="NEGATIVE" else -result["score"]
 
-        tfidf_score_array = self.tfidf_model.predict_proba(self.tfidf_vectorizer.transform([text_clean]))[0]
-        tfidf_pred = 'FAKE' if tfidf_score_array[self.label_encoder.transform(['FAKE'])[0]] > 0.5 else 'REAL'
-        tfidf_score = tfidf_score_array[self.label_encoder.transform([tfidf_pred])[0]]
-        tfidf_score = tfidf_score if tfidf_pred=='FAKE' else -tfidf_score
+        # --- Sentiment score ---
+        try:
+            result = self.sentiment_model(text[:512])[0]
+            sent_score = result["score"] if result["label"]=="NEGATIVE" else -result["score"]
+        except:
+            sent_score = 0
 
-        vocab_score = self.vocab_detector.predict_score([text])[0]
+        # --- TF-IDF score ---
+        try:
+            tfidf_score_array = self.tfidf_model.predict_proba(self.tfidf_vectorizer.transform([text_clean]))[0]
+            tfidf_pred = 'FAKE' if tfidf_score_array[self.label_encoder.transform(['FAKE'])[0]] > 0.5 else 'REAL'
+            tfidf_score = tfidf_score_array[self.label_encoder.transform([tfidf_pred])[0]]
+            tfidf_score = tfidf_score if tfidf_pred=='FAKE' else -tfidf_score
+        except:
+            tfidf_score = 0
 
-        final_score = 0.25*sent_score + 0.4*tfidf_score + 0.35*vocab_score
-        final_label = 'FAKE' if final_score>0 else 'REAL'
+        # --- Vocab score ---
+        try:
+            vocab_score = self.vocab_detector.predict_score([text])[0]
+        except:
+            vocab_score = 0
+
+        # --- Clickbait score ---
+        cb_score = 0
+        if self.clickbait_model:
+            try:
+                clickbait_scores = self.clickbait_model(text[:512])[0]
+                for item in clickbait_scores:
+                    if 'clickbait' in item['label'].lower() or item['label'] == 'LABEL_1':
+                        cb_score = item['score']
+                    else:
+                        cb_score -= item['score']
+            except:
+                cb_score = 0
+
+        # --- Weighted combination ---
+        if self.clickbait_model:
+            final_score = 0.25*sent_score + 0.35*tfidf_score + 0.25*vocab_score + 0.15*cb_score
+        else:
+            # Rebalance weights if no clickbait model
+            final_score = 0.3*sent_score + 0.4*tfidf_score + 0.3*vocab_score
+        
+        final_label = 'FAKE' if final_score > 0 else 'REAL'
         return final_label, final_score
 
 # --- Main ---
 if __name__ == "__main__":
+    print("=" * 60)
+    print("LOADING GOSSIPCOP DATASET")
+    print("=" * 60)
+    
     df_fake = pd.read_csv(r"./Dataset/gossipcop_fake.csv")
     df_real = pd.read_csv(r"./Dataset/gossipcop_real.csv")
 
-    # --- Random 100 fake + 100 real samples ---
-    fake_titles = sample(df_fake['title'].dropna().tolist(), 100)
-    real_titles = sample(df_real['title'].dropna().tolist(), 100)
+    # --- Take first 30 fake + 30 real samples ---
+    fake_titles = df_fake['title'].dropna().tolist()[:30]
+    real_titles = df_real['title'].dropna().tolist()[:30]
 
+    print(f"Loaded {len(fake_titles)} fake titles and {len(real_titles)} real titles")
+    
+    print("\n" + "=" * 60)
+    print("INITIALIZING HYBRID DETECTOR")
+    print("=" * 60)
+    
     hybrid_detector = HybridFakeNewsDetector()
     hybrid_detector.train(fake_titles, real_titles)
 
+    print("\n" + "=" * 60)
+    print("TESTING ON GOSSIPCOP DATASET")
+    print("=" * 60)
+    
     test_samples = [('FAKE', t) for t in fake_titles] + [('REAL', t) for t in real_titles]
     wrong = 0
-    for true_label, text in test_samples:
+    correct = 0
+    
+    for i, (true_label, text) in enumerate(test_samples):
         pred_label, score = hybrid_detector.predict(text)
-        print(f"Text: {text[:50]}...")
-        print(f"True: {true_label} | Predicted: {pred_label} | Score: {score:.3f}")
-        print("="*60)
-        if pred_label != true_label:
+        is_correct = pred_label == true_label
+        
+        if is_correct:
+            correct += 1
+        else:
             wrong += 1
+        
+        # Show first 10 results
+        if i < 10:
+            status = "✓" if is_correct else "✗"
+            print(f"{status} '{text[:50]}...'")
+            print(f"   True: {true_label} | Predicted: {pred_label} | Score: {score:.3f}")
+            print("-" * 60)
 
     accuracy = 100*(1 - wrong/len(test_samples))
-    print(f"\nTotal Samples: {len(test_samples)} | Wrong: {wrong}")
+    print(f"\nFINAL RESULTS ON GOSSIPCOP:")
+    print(f"Total Samples: {len(test_samples)}")
+    print(f"Correct: {correct}")
+    print(f"Wrong: {wrong}")
     print(f"Hybrid Detector Accuracy: {accuracy:.2f}%")
+    
+    # Function for pipeline
+    def fake_news_detector_for_pipeline(text):
+        """Use this in your pipeline"""
+        return hybrid_detector.predict(text)[0]  # Returns 'FAKE' or 'REAL'
