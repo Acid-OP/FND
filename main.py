@@ -2,9 +2,11 @@ import pandas as pd
 import re
 import string
 import numpy as np
+from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, classification_report
 from transformers import pipeline
 from random import sample
 
@@ -34,14 +36,20 @@ class VocabBasedFakeNewsDetector:
     def extract_heuristic_features(self, text):
         text_lower = text.lower()
         features = {}
+        
+        # Count fake indicators
         for category, words in self.fake_indicators.items():
             count = sum(1 for word in words if word in text_lower)
             features[f'fake_{category}_count'] = count
             features[f'fake_{category}_density'] = count / len(text.split()) if text.split() else 0
+        
+        # Count real indicators
         for category, words in self.real_indicators.items():
             count = sum(1 for word in words if word in text_lower)
             features[f'real_{category}_count'] = count
             features[f'real_{category}_density'] = count / len(text.split()) if text.split() else 0
+        
+        # Additional heuristics
         features['exclamation_count'] = text.count('!')
         features['question_count'] = text.count('?')
         features['caps_ratio'] = sum(1 for c in text if c.isupper()) / len(text) if text else 0
@@ -67,6 +75,40 @@ class VocabBasedFakeNewsDetector:
         proba = self.model.predict_proba(combined_features)
         score = proba[:, 0] - proba[:, 1]
         return score
+
+    def predict(self, texts):
+        """Predict using vocabulary-based features"""
+        processed_texts = [self.preprocess_text(text) for text in texts]
+        
+        # Extract heuristic features
+        heuristic_features = []
+        for text in processed_texts:
+            features = self.extract_heuristic_features(text)
+            heuristic_features.append(list(features.values()))
+        
+        # TF-IDF features
+        tfidf_features = self.tfidf.transform(processed_texts)
+        
+        # Combine features
+        heuristic_array = np.array(heuristic_features)
+        combined_features = np.hstack([heuristic_array, tfidf_features.toarray()])
+        
+        return self.model.predict(combined_features)
+    
+    def predict_proba(self, texts):
+        """Get prediction probabilities"""
+        processed_texts = [self.preprocess_text(text) for text in texts]
+        
+        heuristic_features = []
+        for text in processed_texts:
+            features = self.extract_heuristic_features(text)
+            heuristic_features.append(list(features.values()))
+        
+        tfidf_features = self.tfidf.transform(processed_texts)
+        heuristic_array = np.array(heuristic_features)
+        combined_features = np.hstack([heuristic_array, tfidf_features.toarray()])
+        
+        return self.model.predict_proba(combined_features)
 
 # --- Hybrid Detector using series chaining ---
 class HybridFakeNewsDetector:
@@ -112,6 +154,61 @@ class HybridFakeNewsDetector:
         final_label = 'FAKE' if final_score>0 else 'REAL'
         return final_label, final_score
 
+# --- Enhanced Evaluation Script ---
+def enhanced_vocab_evaluation():
+    # Load datasets
+    df_fake = pd.read_csv(r"./Dataset/gossipcop_fake.csv")
+    df_real = pd.read_csv(r"./Dataset/gossipcop_real.csv")
+    
+    # Prepare data
+    fake_titles = df_fake['title'].dropna().head(100).tolist()  # More samples for training
+    real_titles = df_real['title'].dropna().head(100).tolist()
+    
+    # Create training and test sets
+    train_fake = fake_titles[:70]  # 70 for training
+    train_real = real_titles[:70]
+    test_fake = fake_titles[70:100]  # 30 for testing
+    test_real = real_titles[70:100]
+    
+    # Prepare training data
+    train_texts = train_fake + train_real
+    train_labels = [0] * len(train_fake) + [1] * len(train_real)  # 0=FAKE, 1=REAL
+    
+    # Prepare test data
+    test_texts = test_fake + test_real
+    test_labels = [0] * len(test_fake) + [1] * len(test_real)
+    
+    # Train the enhanced detector
+    detector = VocabBasedFakeNewsDetector()
+    detector.train(train_texts, train_labels)
+    
+    # Make predictions
+    predictions = detector.predict(test_texts)
+    probabilities = detector.predict_proba(test_texts)
+    
+    # Calculate accuracy
+    accuracy = accuracy_score(test_labels, predictions)
+    
+    print("===== ENHANCED VOCABULARY-BASED FAKE NEWS DETECTION =====")
+    print(f"Training Samples: {len(train_texts)} (70 fake + 70 real)")
+    print(f"Test Samples: {len(test_texts)} (30 fake + 30 real)")
+    print(f"Accuracy: {accuracy:.2%}")
+    print("\nDetailed Classification Report:")
+    print(classification_report(test_labels, predictions, target_names=['FAKE', 'REAL']))
+    
+    # Show some examples
+    print("\n===== SAMPLE PREDICTIONS =====")
+    for i in range(min(10, len(test_texts))):
+        true_label = "FAKE" if test_labels[i] == 0 else "REAL"
+        pred_label = "FAKE" if predictions[i] == 0 else "REAL"
+        confidence = max(probabilities[i])
+        
+        print(f"\nHeadline: {test_texts[i][:80]}...")
+        print(f"True: {true_label} | Predicted: {pred_label} | Confidence: {confidence:.3f}")
+        print(f"Correct: {true_label == pred_label}")
+    
+    return detector, accuracy
+
 # --- Main ---
 if __name__ == "__main__":
     df_fake = pd.read_csv(r"./Dataset/gossipcop_fake.csv")
@@ -137,3 +234,16 @@ if __name__ == "__main__":
     accuracy = 100*(1 - wrong/len(test_samples))
     print(f"\nTotal Samples: {len(test_samples)} | Wrong: {wrong}")
     print(f"Hybrid Detector Accuracy: {accuracy:.2f}%")
+    
+    # Also run enhanced evaluation
+    print("\n" + "="*80)
+    detector, final_accuracy = enhanced_vocab_evaluation()
+    
+    print(f"\n🎯 FINAL ACCURACY: {final_accuracy:.2%}")
+    
+    if final_accuracy > 0.65:
+        print("✅ Good performance for vocabulary-based heuristics!")
+    elif final_accuracy > 0.55:
+        print("⚠️  Moderate performance - room for improvement")
+    else:
+        print("❌ Poor performance - needs significant improvement")
