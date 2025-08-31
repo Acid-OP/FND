@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
 from transformers import pipeline
 from random import sample
 
@@ -172,27 +173,36 @@ if __name__ == "__main__":
     print("LOADING GOSSIPCOP DATASET")
     print("=" * 60)
     
-    df_fake = pd.read_csv(r"./Dataset/gossipcop_fake.csv")
-    df_real = pd.read_csv(r"./Dataset/gossipcop_real.csv")
+    df_fake = pd.read_csv(r"./Dataset/gossipcop_fake.csv",nrows=1024)
+    df_real = pd.read_csv(r"./Dataset/gossipcop_real.csv",nrows=1024)
 
-    # --- Take first 30 fake + 30 real samples ---
-    fake_titles = df_fake['title'].dropna().tolist()[:30]
-    real_titles = df_real['title'].dropna().tolist()[:30]
+    train_df_fake, test_df_fake = train_test_split(df_fake, test_size=0.2, random_state=42)
+    train_df_real, test_df_real = train_test_split(df_real, test_size=0.2, random_state=42)
 
-    print(f"Loaded {len(fake_titles)} fake titles and {len(real_titles)} real titles")
+
+    # --- 80% as training samples ---
+    train_fake_titles = train_df_fake['title'].dropna().tolist()
+    train_real_titles = train_df_real['title'].dropna().tolist()
+
+    # --- 20% as testing samples ---
+    test_fake_titles = test_df_fake['title'].dropna().tolist()
+    test_real_titles = test_df_real['title'].dropna().tolist()
+
+
+    print(f"Loaded {len(train_fake_titles)} fake titles and {len(train_real_titles)} real titles")
     
     print("\n" + "=" * 60)
     print("INITIALIZING HYBRID DETECTOR")
     print("=" * 60)
     
     hybrid_detector = HybridFakeNewsDetector()
-    hybrid_detector.train(fake_titles, real_titles)
+    hybrid_detector.train(train_fake_titles, train_real_titles)
 
     print("\n" + "=" * 60)
     print("TESTING ON GOSSIPCOP DATASET")
     print("=" * 60)
     
-    test_samples = [('FAKE', t) for t in fake_titles] + [('REAL', t) for t in real_titles]
+    test_samples = [('FAKE', t) for t in test_fake_titles] + [('REAL', t) for t in test_real_titles]
     wrong = 0
     correct = 0
     
