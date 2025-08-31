@@ -12,3 +12,4 @@ env/
 # IDE files
 .vscode/
 .idea/
+chunk_embeddings.json
