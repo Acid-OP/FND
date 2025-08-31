@@ -40,44 +40,101 @@ def split_into_chunks(text, window_size=120, step_size=60):
     
     return chunks
 
-def create_chunk_embeddings(text, article_id, label):
-    """Create embeddings for each chunk of an article"""
+def create_title_embeddings(title, article_id, label):
+    """Create embeddings for title (no chunking needed for titles)"""
+    # Clean title
+    title = ' '.join(str(title).split())
+    
+    # Create single embedding for title
+    embedding = model.encode([title], show_progress_bar=False)[0]
+    
+    title_data = {
+        'article_id': article_id,
+        'content_type': 'title',
+        'label': label,
+        'text': title,
+        'embedding': embedding.tolist()
+    }
+    
+    return title_data
+
+def create_body_chunk_embeddings(text, article_id, label):
+    """Create embeddings for each chunk of article body"""
     chunks = split_into_chunks(text)
-    # Batch encode for speed - MAIN OPTIMIZATION
+    # Batch encode for speed
     embeddings = model.encode(chunks, show_progress_bar=False)
+    
     chunk_data = []
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
         chunk_info = {
             'article_id': article_id,
             'chunk_id': i,
+            'content_type': 'body_chunk',
             'label': label,
-            'chunk_text': chunk,
+            'text': chunk,
             'embedding': embedding.tolist()
         }
         chunk_data.append(chunk_info)
     
     return chunk_data
 
-# Process all articles and create chunk embeddings
-print("Creating chunk embeddings...")
-all_chunk_embeddings = []
+# Storage containers
+all_title_embeddings = []
+all_body_embeddings = []
+
+print("Creating separate title and body embeddings...")
 
 # Process fake articles
 for idx, row in fake_sample.iterrows():
     print(f"Processing fake article {idx+1}/5...")
-    chunks = create_chunk_embeddings(row['text'], f"fake_{idx}", label=1)
-    all_chunk_embeddings.extend(chunks)
+    
+    # Process title
+    title_emb = create_title_embeddings(row['title'], f"fake_{idx}", label=1)
+    all_title_embeddings.append(title_emb)
+    
+    # Process body chunks
+    body_chunks = create_body_chunk_embeddings(row['text'], f"fake_{idx}", label=1)
+    all_body_embeddings.extend(body_chunks)
 
 # Process real articles  
 for idx, row in real_sample.iterrows():
     print(f"Processing real article {idx+1}/5...")
-    chunks = create_chunk_embeddings(row['text'], f"real_{idx}", label=0)
-    all_chunk_embeddings.extend(chunks)
+    
+    # Process title
+    title_emb = create_title_embeddings(row['title'], f"real_{idx}", label=0)
+    all_title_embeddings.append(title_emb)
+    
+    # Process body chunks
+    body_chunks = create_body_chunk_embeddings(row['text'], f"real_{idx}", label=0)
+    all_body_embeddings.extend(body_chunks)
 
-print(f"Total chunks created: {len(all_chunk_embeddings)}")
+print(f"Total title embeddings: {len(all_title_embeddings)}")
+print(f"Total body chunk embeddings: {len(all_body_embeddings)}")
 
-# Save ONLY the JSON file
-with open('chunk_embeddings.json', 'w') as f:
-    json.dump(all_chunk_embeddings, f, indent=2)
+# Save title embeddings separately
+with open('title_embeddings.json', 'w') as f:
+    json.dump(all_title_embeddings, f, indent=2)
 
-print("✅ Chunk embeddings saved as 'chunk_embeddings.json'")
+# Save body embeddings separately  
+with open('body_embeddings.json', 'w') as f:
+    json.dump(all_body_embeddings, f, indent=2)
+
+print("✅ Title embeddings saved as 'title_embeddings.json'")
+print("✅ Body embeddings saved as 'body_embeddings.json'")
+
+# Show what we created
+print("\n" + "="*50)
+print("SEPARATE EMBEDDINGS CREATED:")
+print("="*50)
+print(f"📰 Titles: {len(all_title_embeddings)} embeddings")
+print(f"📄 Body chunks: {len(all_body_embeddings)} embeddings")
+
+if all_title_embeddings:
+    print(f"Title embedding dimension: {len(all_title_embeddings[0]['embedding'])}")
+if all_body_embeddings:
+    print(f"Body embedding dimension: {len(all_body_embeddings[0]['embedding'])}")
+
+print("\n🎯 FILES FOR FND COMPARISON:")
+print("📰 title_embeddings.json - All article titles")
+print("📄 body_embeddings.json - All chunked article bodies")
+print("\n✅ Ready for separate title vs body analysis!")
