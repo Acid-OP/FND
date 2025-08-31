@@ -16,35 +16,43 @@ df_real = pd.read_csv(r"G:\Lock in\New folder\Dataset\True.csv")
 fake_sample = df_fake.head(5)
 real_sample = df_real.head(5)
 
-def sliding_window_chunking(text, window_size=100, step_size=50):
-    """BEST FOR FND: Dense overlapping coverage"""
+def split_into_chunks(text, window_size=120, step_size=60):
+    """Optimized chunking for fake news detection"""
+    # Simple text cleaning
+    text = ' '.join(text.split())  # Remove extra whitespace
     words = text.split()
-    chunks = []
     
-    for i in range(0, len(words) - window_size + 1, step_size):
-        chunk = ' '.join(words[i:i + window_size])
-        chunks.append(chunk)
+    # Return whole text if too short
+    if len(words) <= window_size:
+        return [text]
+    
+    chunks = []
+    for i in range(0, len(words), step_size):
+        if i + window_size <= len(words):
+            chunk = ' '.join(words[i:i + window_size])
+            chunks.append(chunk)
+        else:
+            # Handle final chunk - only if meaningful size
+            final_chunk = ' '.join(words[i:])
+            if len(final_chunk.split()) >= window_size // 3:  # At least 1/3 size
+                chunks.append(final_chunk)
+            break
     
     return chunks
 
 def create_chunk_embeddings(text, article_id, label):
     """Create embeddings for each chunk of an article"""
-    chunks = sliding_window_chunking(text, window_size=100, step_size=50)
-    
+    chunks = split_into_chunks(text)
+    # Batch encode for speed - MAIN OPTIMIZATION
+    embeddings = model.encode(chunks, show_progress_bar=False)
     chunk_data = []
-    for i, chunk in enumerate(chunks):
-        # Create embedding for this chunk
-        embedding = model.encode([chunk])[0]  # Get single embedding vector
-        
-        # Convert to simple list of numbers
-        embedding_list = embedding.tolist()
-        
+    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
         chunk_info = {
             'article_id': article_id,
             'chunk_id': i,
-            'label': label,  # 1=fake, 0=real
+            'label': label,
             'chunk_text': chunk,
-            'embedding': embedding_list  # This is your [1,2,3,...] format
+            'embedding': embedding.tolist()
         }
         chunk_data.append(chunk_info)
     
@@ -68,43 +76,8 @@ for idx, row in real_sample.iterrows():
 
 print(f"Total chunks created: {len(all_chunk_embeddings)}")
 
-# Save ONLY the JSON file (complete data)
+# Save ONLY the JSON file
 with open('chunk_embeddings.json', 'w') as f:
     json.dump(all_chunk_embeddings, f, indent=2)
 
 print("✅ Chunk embeddings saved as 'chunk_embeddings.json'")
-
-# Show what we created
-print("\n" + "="*50)
-print("EMBEDDING DETAILS")
-print("="*50)
-print(f"Total chunks: {len(all_chunk_embeddings)}")
-print(f"Embedding dimension: {len(all_chunk_embeddings[0]['embedding'])}")
-
-# Show sample embedding (first 10 numbers)
-sample_embedding = all_chunk_embeddings[0]['embedding'][:10]
-print(f"\nSample embedding (first 10 values): {sample_embedding}")
-print(f"Full embedding has {len(all_chunk_embeddings[0]['embedding'])} numbers")
-
-# Show file size
-import os
-json_size = os.path.getsize('chunk_embeddings.json') / 1024 / 1024
-print(f"\nFile size: chunk_embeddings.json: {json_size:.2f} MB")
-
-print("\n" + "="*50)
-print("ONE FILE CREATED:")
-print("="*50)
-print("📄 chunk_embeddings.json - Complete data with text + embeddings")
-
-print("\n✅ SIMPLIFIED CHUNK EMBEDDINGS STORAGE COMPLETE!")
-
-# BONUS: Show how to extract arrays from JSON when you need them
-print("\n" + "="*50)
-print("HOW TO USE THE JSON FILE:")
-print("="*50)
-print("# When you need just the vectors:")
-print("with open('chunk_embeddings.json', 'r') as f:")
-print("    data = json.load(f)")
-print("embeddings = np.array([chunk['embedding'] for chunk in data])")
-print("labels = np.array([chunk['label'] for chunk in data])")
-print("# Now you have your arrays!")
