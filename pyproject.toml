@@ -17,6 +17,7 @@ dependencies = [
     "scikit-learn>=1.7.1",
     "seaborn>=0.13.2",
     "sentence-transformers>=5.1.0",
+    "textstat>=0.7.10",
     "torch>=2.8.0",
     "transformers>=4.56.0",
 ]
