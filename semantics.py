@@ -13,7 +13,7 @@ print("Model loaded successfully!")
 df_fake = pd.read_csv(r"./Dataset/Fake.csv")
 df_real = pd.read_csv(r"./Dataset/True.csv")
 
-print(f"📊 Dataset sizes:")
+print(f" Dataset sizes:")
 print(f"   Fake articles: {len(df_fake):,}")
 print(f"   Real articles: {len(df_real):,}")
 
@@ -66,7 +66,7 @@ def calculate_cosine_similarity(title, body_text):
         return 0.5
 
 # STEP 1: Get similarities for training data (first 500 of each)
-print(f"\n🚀 Processing training data...")
+print(f"\n Processing training data...")
 train_fake = df_fake.iloc[:TRAIN_SIZE]                 # rows 0..499
 test_fake  = df_fake.iloc[TRAIN_SIZE:TRAIN_SIZE + TEST_SIZE]   # 500..999
 
@@ -95,7 +95,7 @@ for idx, row in train_real.iterrows():
 fake_similarities = np.array(fake_similarities)
 real_similarities = np.array(real_similarities)
 
-print(f"\n📊 Training similarities:")
+print(f"\n Training similarities:")
 print(f"   Fake news - Mean: {fake_similarities.mean():.3f}")
 print(f"   Real news - Mean: {real_similarities.mean():.3f}")
 
@@ -105,6 +105,7 @@ all_similarities = np.concatenate([fake_similarities, real_similarities])
 # Labels: 0 = fake, 1 = real (for ROC curve interpretation)
 all_labels = np.concatenate([np.zeros(len(fake_similarities)), np.ones(len(real_similarities))])
 
+print(f"\n Finding optimal threshold using ROC curve...")
 print(f"\n Finding optimal threshold using ROC curve...")
 
 # Calculate ROC curve
@@ -121,6 +122,7 @@ optimal_fpr = fpr[optimal_idx]
 optimal_j = youdens_j[optimal_idx]
 
 print(f" OPTIMAL THRESHOLD FROM ROC:")
+print(f" OPTIMAL THRESHOLD FROM ROC:")
 print(f"   Threshold: {optimal_threshold:.3f}")
 print(f"   True Positive Rate: {optimal_tpr:.3f}")
 print(f"   False Positive Rate: {optimal_fpr:.3f}")
@@ -133,6 +135,7 @@ train_accuracy = accuracy_score(all_labels, train_predictions)
 print(f"   Training accuracy: {train_accuracy:.3f} ({train_accuracy*100:.1f}%)")
 
 # STEP 3: Test on test dataset
+print(f"\n Processing test data...")
 print(f"\n Processing test data...")
 test_fake = df_fake.iloc[TRAIN_SIZE:TRAIN_SIZE+TEST_SIZE]  
 test_real = df_real.iloc[TRAIN_SIZE:TRAIN_SIZE+TEST_SIZE]  
@@ -173,11 +176,14 @@ test_roc_auc = auc(test_fpr, test_tpr)
 # RESULTS
 print(f"\n" + "="*60)
 print(" FINAL RESULTS")
+print(" FINAL RESULTS")
 print("="*60)
+print(f" Similarities Analysis:")
 print(f" Similarities Analysis:")
 print(f"   Training - Fake: {fake_similarities.mean():.3f}, Real: {real_similarities.mean():.3f}")
 print(f"   Testing  - Fake: {test_fake_similarities.mean():.3f}, Real: {test_real_similarities.mean():.3f}")
 
+print(f"\n Performance:")
 print(f"\n Performance:")
 print(f"   Optimal threshold: {optimal_threshold:.3f}")
 print(f"   Training accuracy: {train_accuracy:.3f} ({train_accuracy*100:.1f}%)")
