@@ -10,8 +10,8 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 print("Model loaded successfully!")
 
 # Load datasets
-df_fake = pd.read_csv(r"G:\Lock in\New folder\Dataset\Fake.csv")
-df_real = pd.read_csv(r"G:\Lock in\New folder\Dataset\True.csv")
+df_fake = pd.read_csv(r"./Dataset/Fake.csv")
+df_real = pd.read_csv(r"./Dataset/True.csv")
 
 print(f"📊 Dataset sizes:")
 print(f"   Fake articles: {len(df_fake):,}")
@@ -105,7 +105,7 @@ all_similarities = np.concatenate([fake_similarities, real_similarities])
 # Labels: 0 = fake, 1 = real (for ROC curve interpretation)
 all_labels = np.concatenate([np.zeros(len(fake_similarities)), np.ones(len(real_similarities))])
 
-print(f"\n🔍 Finding optimal threshold using ROC curve...")
+print(f"\n Finding optimal threshold using ROC curve...")
 
 # Calculate ROC curve
 # Higher similarity should predict real news (label=1)
@@ -120,7 +120,7 @@ optimal_tpr = tpr[optimal_idx]
 optimal_fpr = fpr[optimal_idx]
 optimal_j = youdens_j[optimal_idx]
 
-print(f"✅ OPTIMAL THRESHOLD FROM ROC:")
+print(f" OPTIMAL THRESHOLD FROM ROC:")
 print(f"   Threshold: {optimal_threshold:.3f}")
 print(f"   True Positive Rate: {optimal_tpr:.3f}")
 print(f"   False Positive Rate: {optimal_fpr:.3f}")
@@ -133,7 +133,7 @@ train_accuracy = accuracy_score(all_labels, train_predictions)
 print(f"   Training accuracy: {train_accuracy:.3f} ({train_accuracy*100:.1f}%)")
 
 # STEP 3: Test on test dataset
-print(f"\n🧪 Processing test data...")
+print(f"\n Processing test data...")
 test_fake = df_fake.iloc[TRAIN_SIZE:TRAIN_SIZE+TEST_SIZE]  
 test_real = df_real.iloc[TRAIN_SIZE:TRAIN_SIZE+TEST_SIZE]  
 
@@ -172,51 +172,53 @@ test_roc_auc = auc(test_fpr, test_tpr)
 
 # RESULTS
 print(f"\n" + "="*60)
-print("🎯 FINAL RESULTS")
+print(" FINAL RESULTS")
 print("="*60)
-print(f"📊 Similarities Analysis:")
+print(f" Similarities Analysis:")
 print(f"   Training - Fake: {fake_similarities.mean():.3f}, Real: {real_similarities.mean():.3f}")
 print(f"   Testing  - Fake: {test_fake_similarities.mean():.3f}, Real: {test_real_similarities.mean():.3f}")
 
-print(f"\n📊 Performance:")
+print(f"\n Performance:")
 print(f"   Optimal threshold: {optimal_threshold:.3f}")
 print(f"   Training accuracy: {train_accuracy:.3f} ({train_accuracy*100:.1f}%)")
 print(f"   Test accuracy: {test_accuracy:.3f} ({test_accuracy*100:.1f}%)")
 print(f"   Test ROC AUC: {test_roc_auc:.3f}")
 
-# # VISUALIZATION: ROC Curve with coordinates
-# plt.figure(figsize=(15, 5))
 
-# # 2. ROC Curve with optimal point
-# plt.subplot(1, 3, 2)
-# plt.plot(fpr, tpr, 'b-', linewidth=2, label=f'Training ROC (AUC={roc_auc:.3f})')
-# plt.plot(test_fpr, test_tpr, 'r-', linewidth=2, label=f'Test ROC (AUC={test_roc_auc:.3f})')
-# plt.plot(optimal_fpr, optimal_tpr, 'go', markersize=10, 
-#          label=f'Optimal Point\n({optimal_fpr:.3f}, {optimal_tpr:.3f})')
-# plt.plot([0, 1], [0, 1], 'k--', alpha=0.5, label='Random')
-# plt.xlabel('False Positive Rate')
-# plt.ylabel('True Positive Rate')
-# plt.title('ROC Curve Analysis')
-# plt.legend()
-# plt.grid(True, alpha=0.3)
 
-# # 3. Youden's J optimization
-# plt.subplot(1, 3, 3)
-# plt.plot(thresholds, youdens_j, 'g-', linewidth=2, label="Youden's J = TPR - FPR")
-# plt.axvline(optimal_threshold, color='red', linestyle='--', linewidth=2, 
-#             label=f'Optimal Threshold: {optimal_threshold:.3f}')
-# plt.plot(optimal_threshold, optimal_j, 'ro', markersize=8, 
-#          label=f'Max J = {optimal_j:.3f}')
-# plt.xlabel('Threshold Value')
-# plt.ylabel("Youden's J Statistic")
-# plt.title('Threshold Optimization')
-# plt.legend()
-# plt.grid(True, alpha=0.3)
+print(f"\n Analysis complete!")
+print(f" Key insight: Real news has higher title-body similarity ({real_similarities.mean():.3f}) than fake news ({fake_similarities.mean():.3f})")
+print(f" Threshold {optimal_threshold:.3f} gives {test_accuracy*100:.1f}% accuracy on test data")
 
-# plt.tight_layout()
-# plt.savefig('roc_analysis_clean.png', dpi=300, bbox_inches='tight')
-# plt.show()
+# VISUALIZATION: ROC Curve with coordinates
+plt.figure(figsize=(15, 5))
 
-print(f"\n✅ Analysis complete!")
-print(f"📊 Key insight: Real news has higher title-body similarity ({real_similarities.mean():.3f}) than fake news ({fake_similarities.mean():.3f})")
-print(f"🎯 Threshold {optimal_threshold:.3f} gives {test_accuracy*100:.1f}% accuracy on test data")
+# 2. ROC Curve with optimal point
+plt.subplot(1, 3, 2)
+plt.plot(fpr, tpr, 'b-', linewidth=2, label=f'Training ROC (AUC={roc_auc:.3f})')
+plt.plot(test_fpr, test_tpr, 'r-', linewidth=2, label=f'Test ROC (AUC={test_roc_auc:.3f})')
+plt.plot(optimal_fpr, optimal_tpr, 'go', markersize=10, 
+         label=f'Optimal Point\n({optimal_fpr:.3f}, {optimal_tpr:.3f})')
+plt.plot([0, 1], [0, 1], 'k--', alpha=0.5, label='Random')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve Analysis')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# 3. Youden's J optimization
+plt.subplot(1, 3, 3)
+plt.plot(thresholds, youdens_j, 'g-', linewidth=2, label="Youden's J = TPR - FPR")
+plt.axvline(optimal_threshold, color='red', linestyle='--', linewidth=2, 
+            label=f'Optimal Threshold: {optimal_threshold:.3f}')
+plt.plot(optimal_threshold, optimal_j, 'ro', markersize=8, 
+         label=f'Max J = {optimal_j:.3f}')
+plt.xlabel('Threshold Value')
+plt.ylabel("Youden's J Statistic")
+plt.title('Threshold Optimization')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('roc_analysis_clean.png', dpi=300, bbox_inches='tight')
+plt.show()
