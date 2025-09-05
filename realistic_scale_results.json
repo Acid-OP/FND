@@ -1,0 +1,26 @@
+{
+  "dataset_info": {
+    "original_fake_count": 500,
+    "original_real_count": 500
+  },
+  "performance": {
+    "simple_threshold": {
+      "threshold": 0.6000000000000002,
+      "accuracy": 0.585,
+      "roc_auc": 0.3584
+    },
+    "random_forest": {
+      "accuracy": 0.985,
+      "roc_auc": 0.001300000000000001
+    }
+  },
+  "feature_importance": {
+    "basic_similarity": 0.03615990041316403,
+    "title_word_count": 0.1893150774581632,
+    "emotional_score": 0.0008623179588035709,
+    "caps_ratio": 0.6957271197477611,
+    "exclamation_count": 0.0009026556904014111,
+    "body_readability": 0.07703292873170665
+  },
+  "processing_time_seconds": 58.14500188827515
+}

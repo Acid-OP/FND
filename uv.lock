@@ -321,7 +321,6 @@ dependencies = [
     { name = "seaborn" },
     { name = "sentence-transformers" },
     { name = "textstat" },
-    { name = "torch" },
     { name = "transformers" },
 ]
 
@@ -343,7 +342,6 @@ requires-dist = [
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "sentence-transformers", specifier = ">=5.1.0" },
     { name = "textstat", specifier = ">=0.7.10" },
-    { name = "torch", specifier = ">=2.8.0" },
     { name = "transformers", specifier = ">=4.56.0" },
 ]
 
