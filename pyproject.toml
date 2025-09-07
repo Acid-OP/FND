@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "accelerate>=1.10.1",
+    "bitsandbytes>=0.47.0",
     "dotenv>=0.9.9",
     "faiss-cpu>=1.12.0",
     "huggingface-hub>=0.34.4",
@@ -21,5 +22,9 @@ dependencies = [
     "seaborn>=0.13.2",
     "sentence-transformers>=5.1.0",
     "textstat>=0.7.10",
+    "torch>=2.8.0",
+    "torchaudio>=2.8.0",
+    "torchvision>=0.23.0",
     "transformers>=4.56.0",
+    "wordcloud>=1.9.4",
 ]
