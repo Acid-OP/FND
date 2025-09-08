@@ -4,7 +4,7 @@ Let's say we have 2 articles in a batch:
 python# Article 1: "Scientists discover new planet..."
 # Article 2: "SHOCKING! Government LIES exposed!!!"
 
-# Each agent gives scores:
+# Each agent gives scores
 individual_scores = {
     'style':     [0.2, 0.9],  # Article 1: professional, Article 2: unprofessional
     'vocab':     [0.1, 0.8],  # Article 1: good vocab, Article 2: poor vocab  
