@@ -11,29 +11,38 @@ class style_agent:
     def __init__(self):
         self.llm = pipeline(
         "text-generation",
-        model="Qwen/Qwen2.5-0.5B-Instruct" ,
-        return_full_text=False
+        model="mistralai/Mistral-7B-Instruct-v0.3" ,
+        # load_in_8bit=True,
+        return_full_text=False,
+        device_map='auto'
         )
 
 
     def create_prompts(self,news_list):  
         prompts = []
-        template = """You are an expert news stylist, responsible for judging the professionalism and reliability of news articles. Your score should reflect how closely the text resembles the style of an established news publisher (e.g., Reuters, BBC, Associated Press).
+        template = """You are a highly skilled and impartial news style analyst. Your only task is to evaluate how professional the **writing style** of a news article is, based only on tone, clarity, and objectivity. Ignore the truthfulness or factual accuracy of the content.
 
-        Score on a scale of 0.00 to 1.00, to two decimal places:
-        - 0.00: Perfect stylistic match to a reliable publisher. (e.g., highly formal, objective, professional tone)
-        - 1.00: No resemblance to a reliable publisher. (e.g., sensationalist, opinionated, poor grammar)
+        Process:
+        1.  **Reasoning:** Identify key stylistic elements (e.g., formal/informal, objective/subjective, balanced/biased, factual/sensational). Be concise.
+        2.  **Score:** Provide a single, final style score on a scale of 0.00 to 1.00 (with two decimal places).
 
-        Example 1:
-        Article: "Breaking news: sources say the government is in turmoil over a new bill."
-        Score: 0.15
+        Rules:
+        - 0.00 = Exemplary professional news style (formal, objective, balanced, factual presentation).
+        - 1.00 = Flagrantly unprofessional news style (sensationalist, emotional, highly biased, sloppy language).
 
-        Example 2:
-        Article: "The president is a total disaster! He's running the country into the ground and everyone knows it."
-        Score: 0.98
+        Example 1: (Professional Style)
+        Article: "The central bank announced a modest interest rate increase on Thursday, citing inflationary concerns and global market volatility."
+        Reasoning: Tone is neutral and formal; objective presentation of facts.
+        Score: 0.08
 
-        Here is the news to be judged:
-        {n_ews}
+        Example 2: (Unprofessional Style)
+        Article: "The government is totally out of control! These corrupt leaders are destroying the country and laughing at us."
+        Reasoning: Highly emotional, subjective, and uses inflammatory language.
+        Score: 0.85
+
+        Article: "{n_ews}"
+        Reasoning:
+        Score:
         """
 
         for news in news_list:
@@ -43,39 +52,59 @@ class style_agent:
     
 
         return prompts
+    
+    def extract_score(self, generated_text):
+        score_pattern = r'score:\s*([0-1]?\.?\d{1,2})'
+        match = re.search(score_pattern, generated_text.lower())
+        
+        if match:
+            try:
+                score = float(match.group(1))
+                return min(1.0, max(0.0, score))
+            except (ValueError, IndexError):
+                pass # Fall through to the next check
+
+        # Fallback to find any float in the text, but only if the first check fails.
+        decimal_pattern = r'([0-1]?\.\d{1,2})'
+        decimal_matches = re.findall(decimal_pattern, generated_text)
+
+        if decimal_matches:
+            try:
+                score = float(decimal_matches[-1])
+                return min(1.0, max(0.0, score))
+            except ValueError:
+                pass
+
+        # Return a fallback value that indicates an error, not a neutral score.
+        # This will allow you to diagnose the problem later if it persists.
+        return -1.0 
 
 
     def run_batch(self,news_batch):
 
 
         input_prompts = self.create_prompts(news_batch);
-        outputs = self.llm(input_prompts,max_new_tokens=5)
-        
+        outputs = self.llm(input_prompts,max_new_tokens=50)
+        print(outputs)
         scores = []
         for output in outputs:
-            generated_text = output[0]['generated_text'].strip()
-            
-            found_numbers = re.findall(r'(\d+\.\d+|\d+)', generated_text)
-            
-            if found_numbers:
-                scores.append(float(found_numbers[0]))
-            else:
-  
-                scores.append(0.0)
+            generated_text = output['generated_text'].strip() if 'generated_text' in output else output[0]['generated_text'].strip()
+            score = self.extract_score(generated_text)
+            scores.append(score)
         
 
 
-        scores_array = np.array(scores)
+        # scores_array = np.array(scores)
 
-        min_val = scores_array.min()
-        max_val = scores_array.max()
+        # min_val = scores_array.min()
+        # max_val = scores_array.max()
 
-        if max_val == min_val:
-            normalized_scores = np.zeros_like(scores_array)
-        else:
-            normalized_scores = (scores_array-min_val)/(max_val-min_val)
+        # if max_val == min_val:
+        #     normalized_scores = np.zeros_like(scores_array)
+        # else:
+        #     normalized_scores = (scores_array-min_val)/(max_val-min_val)
     
-    
+        print(scores)
         return scores
     
 
@@ -94,10 +123,10 @@ class NewsDataset(Dataset):
 
 def main():
 
-    total_samples = 200 # Hard coded for now
+    total_samples = 10 # Hard coded for now
 
-    file_real = pd.read_csv('./Dataset/True.csv',nrows=100);
-    file_fake = pd.read_csv('./Dataset/Fake.csv',nrows=100);
+    file_real = pd.read_csv('./Dataset/True.csv',nrows=5);
+    file_fake = pd.read_csv('./Dataset/Fake.csv',nrows=5);
    
 
     fake_df = pd.DataFrame(file_fake)

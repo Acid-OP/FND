@@ -5,101 +5,75 @@ import numpy as np
 import re
 from sklearn.metrics import roc_curve, auc
 import torch
+from langchain.prompts import PromptTemplate
 
 class VocabAgent:
     def __init__(self):
-        model_id = "Qwen/Qwen2.5-0.5B-Instruct"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
-        
-        # Load model with proper device handling
-        if torch.cuda.is_available():
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_id, device_map="auto", dtype=torch.float16)
-        else:
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_id, dtype=torch.float32)
-        
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-        
-        # Create pipeline without device parameter when using device_map
-        pipeline_kwargs = {
-            "model": self.model, "tokenizer": self.tokenizer, "max_new_tokens": 50,
-            "do_sample": True, "temperature": 0.7, "top_p": 0.9, 
-            "pad_token_id": self.tokenizer.eos_token_id
-        }
-        
-        # Only add device if not using device_map
-        if not torch.cuda.is_available():
-            pipeline_kwargs["device"] = -1
-            
-        self.llm = pipeline("text-generation", **pipeline_kwargs)
+        self.llm = pipeline(
+        "text-generation",
+        model="mistralai/Mistral-7B-Instruct-v0.3" ,
+        device_map='auto'
+        )
 
     def create_prompts(self, news_list):
-        template = """<|im_start|>system
-You are an expert in detecting fake news through vocabulary analysis. Your task is to score news articles based on their language patterns.
+        template = """
+        You are an expert in detecting fake news through vocabulary analysis. Your task is to score news articles based on their language patterns.
 
-Scoring rules:
-- 0.00-0.30: Professional, factual, neutral language → REAL news
-- 0.70-1.00: Sensational, emotional, conspiratorial language → FAKE news
-- 0.31-0.69: Mixed characteristics
+        Scoring rules:
+        - 0.00: Professional, factual, neutral language → REAL news
+        - 1.00: Sensational, emotional, conspiratorial language → FAKE news
 
-Examples:
-Article: "Scientists at Harvard University published findings in Nature journal showing climate patterns."
-Score: 0.15
+        Examples:
+        Article: "Scientists at Harvard University published findings in Nature journal showing climate patterns."
+        Score: 0.15
 
-Article: "SHOCKING! Government COVERS UP the REAL truth! Wake up sheeple!"
-Score: 0.95
-<|im_end|>
+        Article: "SHOCKING! Government COVERS UP the REAL truth! Wake up sheeple!"
+        Score: 0.95
+     
+        Analyze this news article and provide ONLY a score between 0.00 and 1.00:
 
-<|im_start|>user
-Analyze this news article and provide ONLY a score between 0.00 and 1.00:
-
-Article: {news_text}
-
-Score:<|im_end|>
-<|im_start|>assistant
-"""
+        Article: {news_text}
+        Score:
+        """
         prompts = []
         for news in news_list:
-            tokens = self.tokenizer(news, truncation=True, max_length=300, return_tensors="pt")
-            truncated_text = self.tokenizer.decode(tokens["input_ids"][0], skip_special_tokens=True)
-            if len(truncated_text) > 500:
-                truncated_text = truncated_text[:500] + "..."
-            prompts.append(template.format(news_text=truncated_text))
+            prompt = PromptTemplate.from_template(template)
+            final_prompt = prompt.format(news_text=news)
+            prompts.append(final_prompt)
         return prompts
 
     def extract_score(self, generated_text):
-        print(f"Generated text: {generated_text[:200]}...")
-        response_part = generated_text.split("<|im_start|>assistant")[-1] if "<|im_start|>assistant" in generated_text else generated_text
+        score_pattern = r'score:\s*([0-1]?\.?\d{1,2})'
+        match = re.search(score_pattern, generated_text.lower())
         
-        # Try multiple score patterns
-        for pattern in [r'Score:\s*(\d*\.?\d+)', r'(\d\.\d{2})', r'(\d\.\d{1})', r'(\d\.\d+)', r'(\d+\.\d+)', r'(\d+)']:
-            matches = re.findall(pattern, response_part, re.IGNORECASE)
-            if matches:
-                try:
-                    score = float(matches[0])
-                    if score > 1.0:
-                        score = score / 100.0 if score <= 100 else 1.0
-                    return max(0.0, min(1.0, score))
-                except ValueError:
-                    continue
-        
-        # Keyword-based fallback
-        response_lower = response_part.lower()
-        fake_count = sum(1 for word in ['fake', 'false', 'sensational', 'bias', 'misleading', 'propaganda'] if word in response_lower)
-        real_count = sum(1 for word in ['real', 'true', 'factual', 'neutral', 'professional', 'legitimate'] if word in response_lower)
-        
-        if fake_count > real_count: return 0.8
-        elif real_count > fake_count: return 0.2
-        return np.random.choice([0.3, 0.4, 0.6, 0.7])
+        if match:
+            try:
+                score = float(match.group(1))
+                return min(1.0, max(0.0, score))
+            except (ValueError, IndexError):
+                pass # Fall through to the next check
+
+        # Fallback to find any float in the text, but only if the first check fails.
+        decimal_pattern = r'([0-1]?\.\d{1,2})'
+        decimal_matches = re.findall(decimal_pattern, generated_text)
+
+        if decimal_matches:
+            try:
+                score = float(decimal_matches[-1])
+                return min(1.0, max(0.0, score))
+            except ValueError:
+                pass
+
+        # Return a fallback value that indicates an error, not a neutral score.
+        # This will allow you to diagnose the problem later if it persists.
+        return -1.0 
+
 
     def run_batch(self, news_batch):
         scores = []
         for prompt in self.create_prompts(news_batch):
             try:
-                output = self.llm(prompt, max_new_tokens=50, do_sample=True, temperature=0.8, 
-                                 top_p=0.9, repetition_penalty=1.1, return_full_text=False)
+                output = self.llm(prompt, max_new_tokens=50)
                 score = self.extract_score(output[0]["generated_text"].strip())
                 scores.append(score)
             except Exception as e:

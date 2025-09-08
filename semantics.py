@@ -1,207 +1,197 @@
 from transformers import pipeline
 from langchain.prompts import PromptTemplate
 import pandas as pd
+from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import re
 from sklearn.metrics import roc_curve, auc
 
 
-class context_agent:
+class style_agent:
     def __init__(self):
         self.llm = pipeline(
-            "text-generation",
-            model="bigscience/bloom-1b7",
-            return_full_text=False,
-            device_map="auto"
+        "text-generation",
+        model="mistralai/Mistral-7B-Instruct-v0.3" ,
+        # load_in_8bit=True,
+        return_full_text=False,
+        device_map='auto'
         )
 
-    def create_prompts(self, news_list):  
+
+    def create_prompts(self,news_list):  
         prompts = []
-        template = """You are a fact-checking expert specializing in detecting misinformation through contextual analysis. Use step-by-step reasoning to assess this news article's authenticity.
+        template = """You are an expert in news analysis. Your task is to evaluate the conceptual coherence and plausibility of a news article's narrative. Your judgment should be based on how well the story's events, context, and implications align with a believable reality.
 
-Article: "{news_content}"
+        Process:
+        1.  **Reasoning:** Analyze the narrative's internal logic and plausibility.
+        2.  **Score:** Provide a single score from 0.00 (highly credible) to 1.00 (likely fabricated).
 
-Step 1 - Content Analysis:
-What is this article claiming happened? List the key events/claims.
+        Example 1 (Credible):
+        Article: "NASA Confirms Artemis II Astronaut Crew, Aims for 2024 Launch"
+        Reasoning: This mission and crew selection are consistent with publicly known facts and NASA's plans.
+        Score: 0.15
 
-Step 2 - Plausibility Check:
-For each claim, assess: Is this plausible given normal circumstances?
+        Example 2 (Fabricated):
+        Article: "Scientists Discover Method for Faster-Than-Light Travel"
+        Reasoning: The claim contradicts established physics.
+        Score: 0.98
 
-Step 3 - Evidence Evaluation:
-What evidence is provided for each claim? Is it sufficient?
-
-Step 4 - Context Assessment:
-Does the broader context make sense? Are there missing pieces?
-
-Step 5 - Consistency Review:
-Are all parts of the story consistent with each other?
-
-Step 6 - Reality Check:
-Based on your knowledge, could this realistically happen as described?
-
-Final Assessment:
-Score this article's credibility on a scale of 0.00 to 1.00:
-- 0.00: Highly credible, authentic news content
-- 1.00: Highly suspicious, likely fake news
-
-Provide only the final score as a decimal number (e.g., 0.75).
-
-{news_content}"""
+        Article: "{news_content}"
+        Reasoning:
+        Score:  
+        """
 
         for news in news_list:
             prompt = PromptTemplate.from_template(template)
             final_prompt = prompt.format(news_content=news)
             prompts.append(final_prompt)
+    
 
         return prompts
-
+    
     def extract_score(self, generated_text):
-        score_pattern = r'(?:score|assessment)?\s*:?\s*([0-1]?\.\d{1,2}|[01]\.?0?0?)'
-        matches = re.findall(score_pattern, generated_text.lower())
+        score_pattern = r'score:\s*([0-1]?\.?\d{1,2})'
+        match = re.search(score_pattern, generated_text.lower())
         
-        if matches:
+        if match:
             try:
-                score = float(matches[-1])
+                score = float(match.group(1))
                 return min(1.0, max(0.0, score))
-            except ValueError:
-                pass
-        
+            except (ValueError, IndexError):
+                pass # Fall through to the next check
+
+        # Fallback to find any float in the text, but only if the first check fails.
         decimal_pattern = r'([0-1]?\.\d{1,2})'
         decimal_matches = re.findall(decimal_pattern, generated_text)
-        
+
         if decimal_matches:
             try:
                 score = float(decimal_matches[-1])
                 return min(1.0, max(0.0, score))
             except ValueError:
                 pass
-        
-        return 0.5
 
-    def run_batch(self, news_batch):
-        input_prompts = self.create_prompts(news_batch)
-        
-        outputs = self.llm(
-            input_prompts, 
-            max_new_tokens=200,
-            temperature=0.2,
-            do_sample=True,
-            pad_token_id=self.llm.tokenizer.eos_token_id
-        )
-        
+        # Return a fallback value that indicates an error, not a neutral score.
+        # This will allow you to diagnose the problem later if it persists.
+        return -1.0 
+
+
+    def run_batch(self,news_batch):
+
+
+        input_prompts = self.create_prompts(news_batch);
+        outputs = self.llm(input_prompts,max_new_tokens=50)
+        print(outputs)
         scores = []
         for output in outputs:
             generated_text = output['generated_text'].strip() if 'generated_text' in output else output[0]['generated_text'].strip()
             score = self.extract_score(generated_text)
             scores.append(score)
         
-        return scores
 
+
+        # scores_array = np.array(scores)
+
+        # min_val = scores_array.min()
+        # max_val = scores_array.max()
+
+        # if max_val == min_val:
+        #     normalized_scores = np.zeros_like(scores_array)
+        # else:
+        #     normalized_scores = (scores_array-min_val)/(max_val-min_val)
+    
+        print(scores)
+        return scores
+    
+
+
+class NewsDataset(Dataset):
+    def __init__(self,dataframe):
+        self.data_frame = dataframe
+
+    def __len__(self):
+        return len(self.data_frame)
+    
+    def __getitem__(self,idx):
+        row = self.data_frame.iloc[idx]
+        text = row['text']
+        return text
 
 def main():
-    total_samples = 200
-    samples_per_class = 100
 
-    print("Loading datasets...")
-    print("Dataset info: Real articles=21417, Fake articles=23481")
+    total_samples = 10 # Hard coded for now
 
-    file_real = pd.read_csv('./Dataset/True.csv', nrows=samples_per_class)
-    file_fake = pd.read_csv('./Dataset/Fake.csv', nrows=samples_per_class)
+    file_real = pd.read_csv('./Dataset/True.csv',nrows=5);
+    file_fake = pd.read_csv('./Dataset/Fake.csv',nrows=5);
+   
 
     fake_df = pd.DataFrame(file_fake)
     real_df = pd.DataFrame(file_real)
-
+    
     cols = ['text']
     real_sub = real_df[cols]
     fake_sub = fake_df[cols]
 
-    print(f"Real articles loaded: {len(real_sub)}")
-    print(f"Fake articles loaded: {len(fake_sub)}")
-
     all_scores = []
     all_labels = []
 
-    print("Initializing BLOOM 1.7B context-based fake news detection agent...")
-    agent = context_agent()
+    agent = style_agent()
 
-    print("Processing fake news articles...")
+    fake_dataset = NewsDataset(fake_sub)
+    fake_dataloader = DataLoader(fake_dataset,batch_size=20)
+
+    real_dataset = NewsDataset(real_sub)
+    real_dataloader = DataLoader(real_dataset,batch_size=20)
+
+# 1 = FAKE
+# 0 = REAL
+
     fake_correct = 0
     fake_wrong = 0
 
-    for idx in range(len(fake_sub)):
-        text = [fake_sub.iloc[idx]['text']]
-        print(f"Processing fake news article {idx + 1}/{len(fake_sub)}")
+    for text in fake_dataloader:
         text_scores = agent.run_batch(text)
         all_scores.extend(text_scores)
-        all_labels.extend([1] * len(text_scores))
-
-    print("Processing real news articles...")
+        all_labels.extend([1]*len(text_scores))
+        
     real_correct = 0
     real_wrong = 0
 
-    for idx in range(len(real_sub)):
-        text = [real_sub.iloc[idx]['text']]
-        print(f"Processing real news article {idx + 1}/{len(real_sub)}")
+
+    for text in real_dataloader:
         text_scores = agent.run_batch(text)
         all_scores.extend(text_scores)
-        all_labels.extend([0] * len(text_scores))
+        all_labels.extend([0]*len(text_scores))
+        
 
-    print("Calculating optimal threshold...")
     fpr, tpr, thresholds = roc_curve(all_labels, all_scores)
-    roc_auc = auc(fpr, tpr)
+    # roc_auc = auc(fpr, tpr)
 
-    threshold_idx = np.argmax(tpr - fpr)
+    threshold_idx = np.argmax(tpr-fpr)
     THRESHOLD = thresholds[threshold_idx]
 
-    print(f"Optimal threshold: {THRESHOLD:.3f}")
-    print(f"ROC AUC: {roc_auc:.3f}")
-
-    fake_scores = all_scores[:len(fake_sub)]
-    real_scores = all_scores[len(fake_sub):]
-
-    for score in fake_scores:
+    for score in all_scores[:len(fake_sub)]:
         if score >= THRESHOLD:
             fake_correct += 1
         else:
             fake_wrong += 1
-
-    for score in real_scores:
+    
+    for score in all_scores[len(real_sub):]:
         if score < THRESHOLD:
             real_correct += 1
         else:
             real_wrong += 1
 
+
     total_correct = fake_correct + real_correct
-    accuracy = 100 * (total_correct / total_samples)
+    print("Accuracy: ",100*( total_correct/total_samples),"\n")
 
-    print("\n" + "="*60)
-    print("CONTEXT-BASED FAKE NEWS DETECTION RESULTS")
-    print("Multi-Step Reasoning Chain Approach")
-    print("="*60)
-    print(f"Model: BLOOM 1.7B")
-    print(f"Dataset: Real News vs Fake News")
-    print(f"Total Samples: {total_samples}")
-    print(f"Accuracy: {accuracy:.2f}%")
-    print(f"ROC AUC Score: {roc_auc:.3f}")
-    print(f"Optimal Threshold: {THRESHOLD:.3f}")
-    print()
-    print("FAKE NEWS DETECTION:")
-    print(f"Correctly identified as fake: {fake_correct}/{len(fake_sub)}")
-    print(f"Incorrectly identified as real: {fake_wrong}/{len(fake_sub)}")
-    print(f"Fake news detection rate: {100*fake_correct/(fake_correct+fake_wrong):.2f}%")
-    print(f"Average fake score: {np.mean(fake_scores):.3f}")
-    print()
-    print("REAL NEWS DETECTION:")
-    print(f"Correctly identified as real: {real_correct}/{len(real_sub)}")
-    print(f"Incorrectly identified as fake: {real_wrong}/{len(real_sub)}")
-    print(f"Real news detection rate: {100*real_correct/(real_correct+real_wrong):.2f}%")
-    print(f"Average real score: {np.mean(real_scores):.3f}")
-    print("="*60)
+    
+    print("fake correct: ", fake_correct)
+    print("fake wrong: ", fake_wrong, "\n")
 
-    print("\nSAMPLE SCORES (for debugging):")
-    print("First 5 Fake scores:", [f"{s:.3f}" for s in fake_scores[:5]])
-    print("First 5 Real scores:", [f"{s:.3f}" for s in real_scores[:5]])
-
+    print("Real correct: ", real_correct)
+    print("Real wrong: ", real_wrong)
 
 if __name__ == "__main__":
     main()
