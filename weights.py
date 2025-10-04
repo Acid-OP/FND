@@ -2,6 +2,7 @@ from transformers import pipeline
 from langchain.prompts import PromptTemplate
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
+import torch
 import numpy as np
 import re
 from sklearn.metrics import roc_curve, auc
@@ -293,7 +294,9 @@ class MultiAgentDetector:
         return weighted_scores
 
 class NewsDataset(Dataset):
-    def __init__(self, dataframe):
+    def __init__(self, dataframe, fot):
+        
+        self.fot = fot
         self.data_frame = dataframe
     
     def __len__(self):
@@ -302,10 +305,14 @@ class NewsDataset(Dataset):
     def __getitem__(self, idx):
         row = self.data_frame.iloc[idx]
         text = row['text']
-        return text
+        if(self.fot):
+            label = 'true'
+        else:
+            label = 'false'
+        return (text,label)
 
 def main():
-    total_samples = 30 
+    # total_samples = 30 
     agent_weights = {
         'style': 0.3,
         'vocab': 0.2,     
@@ -317,19 +324,24 @@ def main():
     file_fake = pd.read_csv('./Dataset/Fake.csv', nrows=15)
     fake_df = pd.DataFrame(file_fake)
     real_df = pd.DataFrame(file_real)
-    
+
     cols = ['text']
     real_sub = real_df[cols]
     fake_sub = fake_df[cols] 
+   
+    # detector = MultiAgentDetector(agent_weights)
+    fake_dataset = NewsDataset(fake_sub,False)
+    fake_dataloader = DataLoader(fake_dataset, batch_size=5, shuffle=True, num_workers= 2)  
+    real_dataset = NewsDataset(real_sub,True)
+    real_dataloader = DataLoader(real_dataset, batch_size=5, shuffle = True,num_workers = 2)
 
-    detector = MultiAgentDetector(agent_weights)
-    fake_dataset = NewsDataset(fake_sub)
-    fake_dataloader = DataLoader(fake_dataset, batch_size=15)  
-    real_dataset = NewsDataset(real_sub)
-    real_dataloader = DataLoader(real_dataset, batch_size=15)
+    fakeiter = iter(fake_dataloader)
+    data = next(fakeiter)
+    text , label = data
+    print(text,label)
 
     all_weighted_scores = []
-    all_labels = []
+    all_labels = []   
     all_individual_scores = {agent: [] for agent in detector.agents.keys()}
 # 1 = FAKE
 # 0 = REAL
@@ -504,10 +516,10 @@ def only_random_testing():
     """
     test_random_weights(num_iterations=25)
 
-# Example usage:
+# # Example usage:
 if __name__ == "__main__":
-    # Option 1: Run original + random testing
+    # # Option 1: Run original + random testing
     main_with_random_testing()
-    
-    # Option 2: Run only random testing
-    # only_random_testing()
+    main()
+    # # Option 2: Run only random testing
+    only_random_testing()
