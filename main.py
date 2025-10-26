@@ -13,7 +13,7 @@ class BaseAgent:
         self.agent_name = agent_name
         self.llm = pipeline(
             "text-generation",
-            model="Qwen/Qwen2.5-0.5B-Instruct",
+            model="meta-llama/Llama-3.1-8B-Instruct",
             return_full_text=False,
             device_map='auto'
         )

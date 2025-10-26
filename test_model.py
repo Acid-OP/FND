@@ -4,9 +4,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import pandas as pd
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-
+# -------------------------
 # LOAD MODEL WITH ADAPTER
-
+# -------------------------
 adapter_path = "./final_news_adapter"
 base_model_name = "Qwen/Qwen2.5-0.5B-Instruct"
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -31,8 +31,9 @@ model.eval()  # Set to evaluation mode
 
 print("Model loaded successfully!")
 
+# -------------------------
 # PREDICTION FUNCTION
-
+# -------------------------
 def predict_news(text, max_length=256):
     """
     Predict whether news text is true or false
@@ -62,7 +63,7 @@ You are a text classification assistant. Your task is to analyze the tone of the
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=10,  # only to extract true and false
+            max_new_tokens=10,  # We only need "true" or "false"
             temperature=0.1,    # Low temperature for more deterministic output
             do_sample=False,    # Greedy decoding
             pad_token_id=tokenizer.pad_token_id
@@ -80,14 +81,15 @@ You are a text classification assistant. Your task is to analyze the tone of the
     elif "false" in response:
         prediction = "false"
     else:
+        # If unclear, analyze the first word
         first_word = response.split()[0] if response.split() else ""
         prediction = "true" if "true" in first_word else "false"
     
     return prediction, response
 
-
+# -------------------------
 # TEST ON SINGLE EXAMPLE
-
+# -------------------------
 def test_single_example():
     print("\n" + "="*50)
     print("TESTING SINGLE EXAMPLE")
@@ -103,22 +105,22 @@ def test_single_example():
     print(f"\nModel Response: {response}")
     print(f"Prediction: {prediction}")
 
-
+# -------------------------
 # TEST ON DATASET
-
+# -------------------------
 def test_on_dataset():
     print("\n" + "="*50)
     print("TESTING ON DATASET")
     print("="*50)
     
-    # Load test data 
+    # Load test data (using new samples that weren't in training)
     print("\nLoading test dataset...")
     fake_data = pd.read_csv("./Dataset/Fake.csv")
     real_data = pd.read_csv("./Dataset/True.csv")
     
-    
-    fake_test = fake_data.iloc[100:150]  
-    real_test = real_data.iloc[100:150]   
+    # Skip the first 100 samples used in training
+    fake_test = fake_data.iloc[100:200]  # Get 50 samples
+    real_test = real_data.iloc[100:200]  # Get 50 samples
     
     fake_test["label"] = "false"
     real_test["label"] = "true"
@@ -158,7 +160,7 @@ def test_on_dataset():
     print("\nConfusion Matrix:")
     print(confusion_matrix(true_labels, predictions))
     
-    #some examples
+    # Show some examples
     print("\n" + "="*50)
     print("SAMPLE PREDICTIONS")
     print("="*50)
@@ -170,9 +172,34 @@ def test_on_dataset():
         print(f"Predicted: {predictions[i]}")
         print(f"Correct: {'✓' if predictions[i] == true_labels[i] else '✗'}")
 
+# -------------------------
+# INTERACTIVE MODE
+# -------------------------
+def interactive_mode():
+    print("\n" + "="*50)
+    print("INTERACTIVE MODE")
+    print("="*50)
+    print("Enter news text to classify (or 'quit' to exit)")
+    
+    while True:
+        print("\n" + "-"*50)
+        user_input = input("\nEnter news text: ").strip()
+        
+        if user_input.lower() in ['quit', 'exit', 'q']:
+            print("Exiting interactive mode...")
+            break
+        
+        if not user_input:
+            print("Please enter some text.")
+            continue
+        
+        prediction, response = predict_news(user_input)
+        print(f"\nModel Response: {response}")
+        print(f"Classification: {prediction.upper()}")
 
+# -------------------------
 # MAIN
-
+# -------------------------
 if __name__ == "__main__":
     print("\n" + "="*50)
     print("FAKE NEWS DETECTION - MODEL TESTING")
@@ -187,5 +214,11 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\nCouldn't test on dataset: {e}")
         print("Make sure Dataset/Fake.csv and Dataset/True.csv exist")
-
+    
+    # Interactive mode (optional)
+    print("\n" + "="*50)
+    use_interactive = input("\nWould you like to enter interactive mode? (y/n): ").strip().lower()
+    if use_interactive == 'y':
+        interactive_mode()
+    
     print("\nTesting completed!")
