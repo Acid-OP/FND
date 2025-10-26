@@ -2,7 +2,6 @@ from transformers import pipeline
 from langchain.prompts import PromptTemplate
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
-import torch
 import numpy as np
 import re
 from sklearn.metrics import roc_curve, auc
@@ -312,7 +311,7 @@ class NewsDataset(Dataset):
         return (text,label)
 
 def main():
-    # total_samples = 30 
+    total_samples = 10 
     agent_weights = {
         'style': 0.3,
         'vocab': 0.2,     
@@ -320,8 +319,8 @@ def main():
         'semantics': 0.25  
     }
     
-    file_real = pd.read_csv('./Dataset/True.csv', nrows=15)
-    file_fake = pd.read_csv('./Dataset/Fake.csv', nrows=15)
+    file_real = pd.read_csv('./Dataset/True.csv', nrows=5)
+    file_fake = pd.read_csv('./Dataset/Fake.csv', nrows=5)
     fake_df = pd.DataFrame(file_fake)
     real_df = pd.DataFrame(file_real)
 
@@ -329,7 +328,7 @@ def main():
     real_sub = real_df[cols]
     fake_sub = fake_df[cols] 
    
-    # detector = MultiAgentDetector(agent_weights)
+    detector = MultiAgentDetector(agent_weights)
     fake_dataset = NewsDataset(fake_sub,False)
     fake_dataloader = DataLoader(fake_dataset, batch_size=5, shuffle=True, num_workers= 2)  
     real_dataset = NewsDataset(real_sub,True)
