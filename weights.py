@@ -6,6 +6,51 @@ import numpy as np
 import re
 from sklearn.metrics import roc_curve, auc
 from typing import Dict, List, Tuple
+import torch
+import os
+
+def load_trained_weights(weights_path='best_weights.pth') -> Dict[str, float]:
+    """
+    Load dynamically trained weights from file, or use equal weights as fallback.
+
+    Args:
+        weights_path: Path to saved PyTorch weights file
+
+    Returns:
+        Dictionary of agent weights
+    """
+    if os.path.exists(weights_path):
+        try:
+            # Load PyTorch weights
+            weight_tensor = torch.load(weights_path, map_location='cpu')
+            if isinstance(weight_tensor, dict) and 'weights' in weight_tensor:
+                weights_raw = torch.softmax(weight_tensor['weights'], dim=0).numpy()
+            else:
+                print(f"Warning: Could not parse weights file. Using equal weights.")
+                weights_raw = np.array([0.25, 0.25, 0.25, 0.25])
+
+            agent_weights = {
+                'style': float(weights_raw[0]),
+                'vocab': float(weights_raw[1]),
+                'sentiment': float(weights_raw[2]),
+                'semantics': float(weights_raw[3])
+            }
+            print(f"✓ Loaded trained weights from {weights_path}: {agent_weights}")
+            return agent_weights
+        except Exception as e:
+            print(f"Warning: Could not load weights from {weights_path}: {e}")
+            print("Using equal weights as fallback.")
+    else:
+        print(f"Warning: No trained weights found at {weights_path}")
+        print("Using equal weights (0.25 each). Train weights using dyn_weights.py first.")
+
+    # Fallback to equal weights
+    return {
+        'style': 0.25,
+        'vocab': 0.25,
+        'sentiment': 0.25,
+        'semantics': 0.25
+    }
 
 class BaseAgent:
     
@@ -311,13 +356,9 @@ class NewsDataset(Dataset):
         return (text,label)
 
 def main():
-    total_samples = 10 
-    agent_weights = {
-        'style': 0.3,
-        'vocab': 0.2,     
-        'sentiment': 0.25, 
-        'semantics': 0.25  
-    }
+    total_samples = 10
+    # Load dynamically trained weights (not hardcoded!)
+    agent_weights = load_trained_weights('best_weights.pth')
     
     file_real = pd.read_csv('./Dataset/True.csv', nrows=5)
     file_fake = pd.read_csv('./Dataset/Fake.csv', nrows=5)
@@ -412,113 +453,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-import random
-
-def generate_random_weights():
-    """Generate random weights that sum to 1.0"""
-    raw_weights = [random.random() for _ in range(4)]
-    total = sum(raw_weights)
-    normalized_weights = [w / total for w in raw_weights]
-    rounded_weights = [round(w, 2) for w in normalized_weights]
-    rounded_weights[-1] = round(1.0 - sum(rounded_weights[:-1]), 2)
-    
-    return {
-        'style': rounded_weights[0],
-        'vocab': rounded_weights[1], 
-        'sentiment': rounded_weights[2],
-        'semantics': rounded_weights[3]
-    }
-
-def test_random_weights(num_iterations=20):
-    """
-    Test multiple random weight combinations and print results
-    
-    Args:
-        num_iterations: Number of random weight combinations to test
-    """
-    print(f"\nTesting {num_iterations} random weight combinations...")
-    print("=" * 60)
-    
-    for i in range(num_iterations):
-        # Generate random weights
-        random_weights = generate_random_weights()
-        
-        # Load data (same as your original main function)
-        total_samples = 30 
-        file_real = pd.read_csv('./Dataset/True.csv', nrows=15)
-        file_fake = pd.read_csv('./Dataset/Fake.csv', nrows=15)
-        fake_df = pd.DataFrame(file_fake)
-        real_df = pd.DataFrame(file_real)
-        
-        cols = ['text']
-        real_sub = real_df[cols]
-        fake_sub = fake_df[cols] 
-
-        # Create detector with random weights
-        detector = MultiAgentDetector(random_weights)
-        fake_dataset = NewsDataset(fake_sub)
-        fake_dataloader = DataLoader(fake_dataset, batch_size=15)  
-        real_dataset = NewsDataset(real_sub)
-        real_dataloader = DataLoader(real_dataset, batch_size=15)
-
-        all_weighted_scores = []
-        all_labels = []
-        
-        # Process fake news
-        for text in fake_dataloader:
-            weighted_scores, individual_scores = detector.run_all_agents(text)
-            all_weighted_scores.extend(weighted_scores)
-            all_labels.extend([1] * len(weighted_scores))  
-        
-        # Process real news
-        for text in real_dataloader:
-            weighted_scores, individual_scores = detector.run_all_agents(text)
-            all_weighted_scores.extend(weighted_scores)
-            all_labels.extend([0] * len(weighted_scores)) 
-        
-        # Calculate accuracy
-        fpr, tpr, thresholds = roc_curve(all_labels, all_weighted_scores)
-        roc_auc = auc(fpr, tpr)
-        
-        threshold_idx = np.argmax(tpr - fpr)
-        THRESHOLD = thresholds[threshold_idx]
-        
-        fake_correct = sum(1 for score in all_weighted_scores[:len(fake_sub)] if score >= THRESHOLD)
-        real_correct = sum(1 for score in all_weighted_scores[len(fake_sub):] if score < THRESHOLD)
-        total_correct = fake_correct + real_correct
-        accuracy = (total_correct / total_samples) * 100
-        
-        # Print results in your requested format
-        print(f"W{i+1} = {random_weights}")
-        print(f"Accuracy = {accuracy:.2f}%")
-        print()
-
-# Add this to your main function or call it separately
-def main_with_random_testing():
-    """
-    Run your original main function plus random weight testing
-    """
-    # Run your original main function first
-    print("Running original main function...")
-    main()
-    
-    # Then run random weight testing
-    print("\n" + "=" * 70)
-    print("RANDOM WEIGHT TESTING")
-    print("=" * 70)
-    test_random_weights(num_iterations=15)
-
-# If you want to run ONLY random weight testing:
-def only_random_testing():
-    """
-    Run only the random weight testing
-    """
-    test_random_weights(num_iterations=25)
-
-# # Example usage:
-if __name__ == "__main__":
-    # # Option 1: Run original + random testing
-    main_with_random_testing()
-    main()
-    # # Option 2: Run only random testing
-    only_random_testing()

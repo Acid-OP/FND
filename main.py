@@ -6,6 +6,51 @@ import numpy as np
 import re
 from sklearn.metrics import roc_curve, auc
 from typing import Dict, List, Tuple
+import torch
+import os
+
+def load_trained_weights(weights_path='best_weights.pth') -> Dict[str, float]:
+    """
+    Load dynamically trained weights from file, or use equal weights as fallback.
+
+    Args:
+        weights_path: Path to saved PyTorch weights file
+
+    Returns:
+        Dictionary of agent weights
+    """
+    if os.path.exists(weights_path):
+        try:
+            # Load PyTorch weights
+            weight_tensor = torch.load(weights_path, map_location='cpu')
+            if isinstance(weight_tensor, dict) and 'weights' in weight_tensor:
+                weights_raw = torch.softmax(weight_tensor['weights'], dim=0).numpy()
+            else:
+                print(f"Warning: Could not parse weights file. Using equal weights.")
+                weights_raw = np.array([0.25, 0.25, 0.25, 0.25])
+
+            agent_weights = {
+                'style': float(weights_raw[0]),
+                'vocab': float(weights_raw[1]),
+                'sentiment': float(weights_raw[2]),
+                'semantics': float(weights_raw[3])
+            }
+            print(f"✓ Loaded trained weights from {weights_path}: {agent_weights}")
+            return agent_weights
+        except Exception as e:
+            print(f"Warning: Could not load weights from {weights_path}: {e}")
+            print("Using equal weights as fallback.")
+    else:
+        print(f"Warning: No trained weights found at {weights_path}")
+        print("Using equal weights (0.25 each). Train weights using dyn_weights.py first.")
+
+    # Fallback to equal weights
+    return {
+        'style': 0.25,
+        'vocab': 0.25,
+        'sentiment': 0.25,
+        'semantics': 0.25
+    }
 
 class BaseAgent:
     
@@ -305,13 +350,9 @@ class NewsDataset(Dataset):
         return text
 
 def main():
-    total_samples = 30  
-    agent_weights = {
-        'style': 0.49,
-        'vocab': 0.22,     
-        'sentiment': 0.11, 
-        'semantics': 0.18 
-    }
+    total_samples = 30
+    # Load dynamically trained weights (not hardcoded!)
+    agent_weights = load_trained_weights('best_weights.pth')
     
     file_real = pd.read_csv('./Dataset/True.csv', nrows=15)
     file_fake = pd.read_csv('./Dataset/Fake.csv', nrows=15)
