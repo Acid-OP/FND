@@ -97,7 +97,7 @@ class BaseAgentClassifier:
             pass
 
         # Fallback: find any decimal between 0 and 1 in the text
-        matches = re.findall(r'\b([01]\.?\d*)\b', response_text)
+        matches = re.findall(r'(?:^|[\s:])([01]\.\d{1,2})\b', response_text)
         for m in matches:
             try:
                 score = float(m)
@@ -108,7 +108,7 @@ class BaseAgentClassifier:
 
         return None
 
-    def run_inference(self, prompt_dicts, agent_name, max_new_tokens=80, temperature=0.3):
+    def run_inference(self, prompt_dicts, agent_name, max_new_tokens=50, temperature=0.1):
         """Runs inference for a given batch of prompts, assuming the model is already loaded."""
         prompt_strings = [p['full_prompt'] for p in prompt_dicts]
         inputs = self.tokenizer(prompt_strings, return_tensors="pt", truncation=True, max_length=2048, padding=True)
@@ -150,89 +150,116 @@ class BaseAgentClassifier:
         return results
 
 # =====================================================================================
-# 3. SPECIALIST AGENT DEFINITIONS
+# 3. SPECIALIST AGENT DEFINITIONS (Fake-news-targeted prompts)
 # =====================================================================================
 def create_chat_prompt(system_prompt, user_prompt):
     """Creates a structured prompt for Qwen Instruct models."""
     return f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{user_prompt}<|im_end|>\n<|im_start|>assistant\n"
 
+SYSTEM_PROMPT = """You are an expert fake news detector. Analyze the article and output ONLY a valid JSON object.
+Example output: {"score": 0.25}"""
+
 class NewsStyleClassifier:
+    """Detects credibility signals: sourcing, attribution, journalistic format."""
     def __init__(self):
         self.agent_name = "Style Agent"
 
     def _create_prompts(self, news_list, max_text_len):
-        system_prompt = "You are an expert news analyst. Your only output must be a single, valid JSON object with a 'score' field."
-        user_template = """Rate the professionalism of this news article from 0 to 1.
-0 = professional (objective, well-sourced)
-1 = unprofessional (sensational, biased)
+        user_template = """Analyze this article for SOURCE CREDIBILITY signals.
+
+Check for: named sources, official citations, news agency attribution (Reuters, AP), datelines, reporter bylines, institutional references.
+
+0.0 = strong credibility markers (named sources, datelines, official quotes) → likely REAL
+1.0 = no credibility markers (anonymous claims, no sources, no attribution) → likely FAKE
+
+Example: "WASHINGTON (Reuters) - The Federal Reserve announced..." → {{"score": 0.10}}
+Example: "Someone revealed the shocking truth that they don't want you to know..." → {{"score": 0.90}}
 
 Article: {news}
 
-JSON Response:"""
+JSON:"""
         prompts = []
         for news in news_list:
             user_prompt = user_template.format(news=news[:max_text_len])
-            full_prompt = create_chat_prompt(system_prompt, user_prompt)
+            full_prompt = create_chat_prompt(SYSTEM_PROMPT, user_prompt)
             prompts.append({'full_prompt': full_prompt, 'user_prompt_content': user_prompt})
         return prompts
 
 class NewsSentimentClassifier:
+    """Detects emotional manipulation and propaganda techniques."""
     def __init__(self):
         self.agent_name = "Sentiment Agent"
 
     def _create_prompts(self, news_list, max_text_len):
-        system_prompt = "You are an expert news analyst. Your only output must be a single, valid JSON object with a 'score' field."
-        user_template = """Rate the sentiment of this news article from 0 to 1.
-0 = objective/neutral
-1 = highly emotional/opinionated
+        user_template = """Analyze this article for EMOTIONAL MANIPULATION tactics.
+
+Check for: fear-mongering, outrage bait, us-vs-them framing, conspiracy language, call-to-action pressure, emotional appeals over facts.
+
+0.0 = neutral factual reporting, balanced tone → likely REAL
+1.0 = heavy emotional manipulation, propaganda tactics → likely FAKE
+
+Example: "The committee voted 12-8 to approve the measure after three hours of debate." → {{"score": 0.05}}
+Example: "They are DESTROYING our country! Wake up people before it's too late!" → {{"score": 0.95}}
 
 Article: {news}
 
-JSON Response:"""
+JSON:"""
         prompts = []
         for news in news_list:
             user_prompt = user_template.format(news=news[:max_text_len])
-            full_prompt = create_chat_prompt(system_prompt, user_prompt)
+            full_prompt = create_chat_prompt(SYSTEM_PROMPT, user_prompt)
             prompts.append({'full_prompt': full_prompt, 'user_prompt_content': user_prompt})
         return prompts
 
 class NewsVocabClassifier:
+    """Detects sensationalist and inflammatory language patterns."""
     def __init__(self):
         self.agent_name = "Vocab Agent"
 
     def _create_prompts(self, news_list, max_text_len):
-        system_prompt = "You are an expert news analyst. Your only output must be a single, valid JSON object with a 'score' field."
-        user_template = """Rate the vocabulary complexity of this news article from 0 to 1.
-0 = simple/accessible
-1 = complex/jargon-heavy
+        user_template = """Analyze this article for SENSATIONALIST LANGUAGE patterns.
+
+Check for: ALL CAPS words, excessive exclamation marks, clickbait phrases ("SHOCKING", "BREAKING", "You won't believe"), loaded/inflammatory words, hyperbolic claims, slang, informal language.
+
+0.0 = measured, precise journalistic language → likely REAL
+1.0 = inflammatory, sensationalist, clickbait language → likely FAKE
+
+Example: "Officials reported a 3% increase in quarterly earnings." → {{"score": 0.05}}
+Example: "EXPOSED! The SHOCKING scandal they tried to COVER UP!!!" → {{"score": 0.95}}
 
 Article: {news}
 
-JSON Response:"""
+JSON:"""
         prompts = []
         for news in news_list:
             user_prompt = user_template.format(news=news[:max_text_len])
-            full_prompt = create_chat_prompt(system_prompt, user_prompt)
+            full_prompt = create_chat_prompt(SYSTEM_PROMPT, user_prompt)
             prompts.append({'full_prompt': full_prompt, 'user_prompt_content': user_prompt})
         return prompts
 
 class NewsSemanticClassifier:
+    """Detects factual coherence and plausibility of claims."""
     def __init__(self):
         self.agent_name = "Semantic Agent"
 
     def _create_prompts(self, news_list, max_text_len):
-        system_prompt = "You are an expert news analyst. Your only output must be a single, valid JSON object with a 'score' field."
-        user_template = """Rate the semantic clarity of this news article from 0 to 1.
-0 = direct/literal
-1 = abstract/figurative
+        user_template = """Analyze this article for FACTUAL COHERENCE and plausibility.
+
+Check for: verifiable claims, logical consistency, extraordinary unsupported claims, internal contradictions, implausible narratives, conspiracy theories, misrepresentation of facts.
+
+0.0 = well-supported, verifiable, logically consistent claims → likely REAL
+1.0 = extraordinary unsupported claims, conspiracy theories, logical contradictions → likely FAKE
+
+Example: "NASA confirmed the launch date after a review by the safety board." → {{"score": 0.10}}
+Example: "Secret documents prove that the government is hiding aliens in Area 51." → {{"score": 0.90}}
 
 Article: {news}
 
-JSON Response:"""
+JSON:"""
         prompts = []
         for news in news_list:
             user_prompt = user_template.format(news=news[:max_text_len])
-            full_prompt = create_chat_prompt(system_prompt, user_prompt)
+            full_prompt = create_chat_prompt(SYSTEM_PROMPT, user_prompt)
             prompts.append({'full_prompt': full_prompt, 'user_prompt_content': user_prompt})
         return prompts
 
@@ -269,17 +296,13 @@ class AggregatedNewsClassifier:
         self.optimal_threshold = 0.5
         self.scaler = StandardScaler()
 
-    def collect_agent_scores(self, dataloader):
-        """Runs LLM inference ONCE and caches all agent scores for the entire dataloader."""
-        print(f"\n{'='*60}\nCOLLECTING AGENT SCORES\n{'='*60}\n")
-
-        self.llm_manager._load_model()
-
+    def _collect_scores_from_loader(self, dataloader, split_name):
+        """Collects agent scores for a single dataloader (model must already be loaded)."""
         all_scores_list = []
         all_labels_list = []
 
         for batch_idx, (news, labels) in enumerate(dataloader):
-            print(f"--- Batch {batch_idx + 1}/{len(dataloader)} ---")
+            print(f"  [{split_name}] Batch {batch_idx + 1}/{len(dataloader)}")
             batch_scores = {}
             for agent_key in self.agent_order:
                 agent = self.agents[agent_key]
@@ -291,24 +314,37 @@ class AggregatedNewsClassifier:
             all_scores_list.append(scores_stacked)
             all_labels_list.append(labels.numpy() if isinstance(labels, torch.Tensor) else np.array(labels))
 
-        self.llm_manager._unload_model()
-
         all_scores = np.vstack(all_scores_list)
         all_labels = np.concatenate(all_labels_list)
 
-        print(f"\nCollected scores for {len(all_labels)} samples.")
-        print(f"Score stats per agent:")
+        print(f"\n  [{split_name}] Collected {len(all_labels)} samples.")
+        print(f"  Score stats per agent:")
         for i, name in enumerate(self.agent_order):
             col = all_scores[:, i]
             default_count = np.sum(col == 0.5)
-            print(f"  {name}: mean={col.mean():.3f}, std={col.std():.3f}, min={col.min():.3f}, max={col.max():.3f}, defaulted_to_0.5={default_count}/{len(col)}")
-        print(f"Label distribution: fake={np.sum(all_labels==1)}, real={np.sum(all_labels==0)}")
+            print(f"    {name}: mean={col.mean():.3f}, std={col.std():.3f}, min={col.min():.3f}, max={col.max():.3f}, defaulted_to_0.5={default_count}/{len(col)}")
+        print(f"  Labels: fake={np.sum(all_labels==1)}, real={np.sum(all_labels==0)}")
         return all_scores, all_labels
 
+    def collect_all_scores(self, train_loader, val_loader, test_loader):
+        """Loads model ONCE, scores all 3 splits, then unloads."""
+        print(f"\n{'='*60}\nCOLLECTING ALL AGENT SCORES (model loads once)\n{'='*60}\n")
+
+        self.llm_manager._load_model()
+
+        train_scores, train_labels = self._collect_scores_from_loader(train_loader, "TRAIN")
+        val_scores, val_labels = self._collect_scores_from_loader(val_loader, "VAL")
+        test_scores, test_labels = self._collect_scores_from_loader(test_loader, "TEST")
+
+        self.llm_manager._unload_model()
+
+        return (train_scores, train_labels), (val_scores, val_labels), (test_scores, test_labels)
+
     def train_weights(self, train_scores, train_labels, val_scores, val_labels):
-        """Trains ensemble weights on pre-computed agent scores."""
+        """Trains ensemble weights with early stopping."""
         optimizer = torch.optim.Adam(self.ensemble_layer.parameters(), lr=self.config["learning_rate"])
         best_loss = float('inf')
+        patience_counter = 0
         epoch_losses = []
 
         # Fit scaler on training scores only
@@ -325,7 +361,7 @@ class AggregatedNewsClassifier:
         val_labels_t = torch.FloatTensor(val_labels).view(-1, 1).to(self.device)
 
         print(f"\n{'='*60}\nSTARTING WEIGHT TRAINING\n{'='*60}")
-        print(f"Epochs: {self.config['epochs']}, LR: {self.config['learning_rate']}")
+        print(f"Epochs: {self.config['epochs']}, LR: {self.config['learning_rate']}, Early stop patience: {self.config['patience']}")
         print(f"Train samples: {len(train_labels)}, Val samples: {len(val_labels)}\n")
 
         for epoch in range(self.config["epochs"]):
@@ -348,10 +384,15 @@ class AggregatedNewsClassifier:
 
             if val_loss < best_loss:
                 best_loss = val_loss
+                patience_counter = 0
                 torch.save(self.ensemble_layer.state_dict(), self.config["weights_save_path"])
                 print(f"  << saved (best)")
             else:
-                print()
+                patience_counter += 1
+                print(f"  (no improve {patience_counter}/{self.config['patience']})")
+                if patience_counter >= self.config["patience"]:
+                    print(f"\nEarly stopping at epoch {epoch + 1}.")
+                    break
 
         # Load best weights back
         self.ensemble_layer.load_state_dict(torch.load(self.config["weights_save_path"], weights_only=True))
@@ -401,7 +442,6 @@ class AggregatedNewsClassifier:
         plt.xlabel('Epoch')
         plt.ylabel('Validation Loss')
         plt.grid(True)
-        plt.xticks(range(1, len(epoch_losses) + 1))
         plt.savefig('loss_vs_epoch.png')
         print("Loss graph saved to 'loss_vs_epoch.png'")
         plt.close()
@@ -463,8 +503,9 @@ class AggregatedNewsClassifier:
 if __name__ == "__main__":
     CONFIG = {
         "batch_size": 10,
-        "epochs": 20,
-        "learning_rate": 0.001,
+        "epochs": 50,
+        "learning_rate": 0.01,
+        "patience": 10,
         "model_name": "Qwen/Qwen2.5-7B-Instruct",
         "max_text_length": 1500,
         "weights_save_path": "best_ensemble_weights.pth",
@@ -510,7 +551,7 @@ if __name__ == "__main__":
     print(f"Train: {len(train_df)} | Val: {len(val_df)} | Test: {len(test_df)}")
 
     # ------------------------------------------------------------------
-    # STEP 2: Collect agent scores ONCE (the expensive LLM step)
+    # STEP 2: Collect agent scores ONCE (model loads once for all splits)
     # ------------------------------------------------------------------
     train_dataset = NewsDataset(train_df)
     val_dataset = NewsDataset(val_df)
@@ -520,14 +561,8 @@ if __name__ == "__main__":
     val_loader = DataLoader(val_dataset, batch_size=CONFIG["batch_size"], shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=CONFIG["batch_size"], shuffle=False)
 
-    print("\n--- Collecting TRAIN scores ---")
-    train_scores, train_labels = classifier.collect_agent_scores(train_loader)
-
-    print("\n--- Collecting VALIDATION scores ---")
-    val_scores, val_labels = classifier.collect_agent_scores(val_loader)
-
-    print("\n--- Collecting TEST scores ---")
-    test_scores, test_labels = classifier.collect_agent_scores(test_loader)
+    (train_scores, train_labels), (val_scores, val_labels), (test_scores, test_labels) = \
+        classifier.collect_all_scores(train_loader, val_loader, test_loader)
 
     # ------------------------------------------------------------------
     # STEP 3: Train ensemble weights (fast, no LLM needed)
