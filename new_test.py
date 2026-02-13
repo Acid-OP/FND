@@ -83,7 +83,8 @@ class BaseAgentClassifier:
             print("Model unloaded and memory cleared.")
 
     def _extract_score(self, response_text):
-        """Robustly extracts score from a JSON object in the response text."""
+        """Robustly extracts score from a JSON object or plain number in the response text."""
+        # Try JSON first
         try:
             json_match = re.search(r'\{.*?\}', response_text, re.DOTALL)
             if json_match:
@@ -92,8 +93,18 @@ class BaseAgentClassifier:
                 score = float(data['score'])
                 if 0 <= score <= 1:
                     return score
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
-            print(f"  [Debug] JSON parsing failed. Error: {e}. Raw Response: '{response_text}'")
+        except (json.JSONDecodeError, KeyError, ValueError):
+            pass
+
+        # Fallback: find any decimal between 0 and 1 in the text
+        matches = re.findall(r'\b([01]\.?\d*)\b', response_text)
+        for m in matches:
+            try:
+                score = float(m)
+                if 0 <= score <= 1:
+                    return score
+            except ValueError:
+                continue
 
         return None
 
@@ -286,6 +297,12 @@ class AggregatedNewsClassifier:
         all_labels = np.concatenate(all_labels_list)
 
         print(f"\nCollected scores for {len(all_labels)} samples.")
+        print(f"Score stats per agent:")
+        for i, name in enumerate(self.agent_order):
+            col = all_scores[:, i]
+            default_count = np.sum(col == 0.5)
+            print(f"  {name}: mean={col.mean():.3f}, std={col.std():.3f}, min={col.min():.3f}, max={col.max():.3f}, defaulted_to_0.5={default_count}/{len(col)}")
+        print(f"Label distribution: fake={np.sum(all_labels==1)}, real={np.sum(all_labels==0)}")
         return all_scores, all_labels
 
     def train_weights(self, train_scores, train_labels, val_scores, val_labels):
@@ -337,7 +354,7 @@ class AggregatedNewsClassifier:
                 print()
 
         # Load best weights back
-        self.ensemble_layer.load_state_dict(torch.load(self.config["weights_save_path"]))
+        self.ensemble_layer.load_state_dict(torch.load(self.config["weights_save_path"], weights_only=True))
 
         self.plot_training_loss(epoch_losses)
         self.find_optimal_threshold(val_scores, val_labels)
@@ -358,7 +375,14 @@ class AggregatedNewsClassifier:
         roc_auc = auc(fpr, tpr)
         j_scores = tpr - fpr
         best_idx = np.argmax(j_scores)
-        self.optimal_threshold = thresholds[best_idx]
+        candidate_threshold = thresholds[best_idx]
+
+        # Guard against degenerate thresholds (inf, nan, or inverted AUC)
+        if not np.isfinite(candidate_threshold) or roc_auc < 0.5:
+            self.optimal_threshold = 0.5
+            print(f"Warning: ROC AUC={roc_auc:.4f}, using default threshold 0.5")
+        else:
+            self.optimal_threshold = candidate_threshold
 
         # Save threshold alongside weights
         torch.save({
@@ -400,7 +424,7 @@ class AggregatedNewsClassifier:
     def evaluate(self, test_scores, test_labels):
         """Evaluates the classifier on pre-computed test scores."""
         try:
-            checkpoint = torch.load(self.config["weights_save_path"])
+            checkpoint = torch.load(self.config["weights_save_path"], weights_only=False)
             self.ensemble_layer.load_state_dict(checkpoint['ensemble_state'])
             self.optimal_threshold = checkpoint['optimal_threshold']
             self.scaler = joblib.load('scaler.gz')
