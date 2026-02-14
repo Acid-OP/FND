@@ -108,7 +108,7 @@ class BaseAgentClassifier:
 
         return None
 
-    def run_inference(self, prompt_dicts, agent_name, max_new_tokens=50, temperature=0.1):
+    def run_inference(self, prompt_dicts, agent_name, max_new_tokens=30, temperature=0.0):
         """Runs inference for a given batch of prompts, assuming the model is already loaded."""
         prompt_strings = [p['full_prompt'] for p in prompt_dicts]
         inputs = self.tokenizer(prompt_strings, return_tensors="pt", truncation=True, max_length=2048, padding=True)
@@ -267,13 +267,17 @@ JSON:"""
 # 4. ENSEMBLE LAYER
 # =====================================================================================
 class EnsembleLayer(nn.Module):
-    """A linear layer to learn the optimal combination of agent scores."""
+    """A small neural network to learn non-linear combinations of agent scores."""
     def __init__(self, num_agents):
         super().__init__()
-        self.linear = nn.Linear(num_agents, 1)
+        self.net = nn.Sequential(
+            nn.Linear(num_agents, 8),
+            nn.ReLU(),
+            nn.Linear(8, 1)
+        )
 
     def forward(self, x):
-        return self.linear(x)
+        return self.net(x)
 
 # =====================================================================================
 # 5. ORCHESTRATOR CLASS
@@ -503,14 +507,14 @@ class AggregatedNewsClassifier:
 if __name__ == "__main__":
     CONFIG = {
         "batch_size": 10,
-        "epochs": 50,
-        "learning_rate": 0.01,
-        "patience": 10,
+        "epochs": 200,
+        "learning_rate": 0.005,
+        "patience": 20,
         "model_name": "Qwen/Qwen2.5-7B-Instruct",
         "max_text_length": 1500,
         "weights_save_path": "best_ensemble_weights.pth",
-        "train_rows": 500,
-        "test_rows": 100,
+        "train_rows": 800,
+        "test_rows": 200,
         "val_split": 0.2,
     }
 
